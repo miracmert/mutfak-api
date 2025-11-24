@@ -1,10 +1,11 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-import sqlite3
-import scraper  # scraper.py dosyasını içe aktarıyoruz
+from typing import Optional
+import scraper
 
 app = FastAPI()
 
+# CORS Ayarları (React uygulamasının erişebilmesi için)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -13,42 +14,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def baglanti_kur():
-    conn = sqlite3.connect('mutfak.db')
-    conn.row_factory = sqlite3.Row
-    return conn
-
 @app.get("/")
-def ana_sayfa():
-    return {"mesaj": "Mutfak Asistanı API Yayında! 🚀"}
+def read_root():
+    return {"status": "active", "message": "Akıllı Mutfak API v2.0 (Live)"}
 
-@app.get("/urunler")
-def urunleri_getir():
-    # Veritabanı yoksa oluştur (İlk kurulum için)
-    scraper.veritabani_kur()
-    
-    conn = baglanti_kur()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("SELECT * FROM urunler ORDER BY fiyat ASC")
-        urunler = cursor.fetchall()
-        return {"data": urunler}
-    except sqlite3.OperationalError:
-        return {"data": [], "mesaj": "Veritabanı boş, önce /guncelle adresine gidin."}
-    finally:
-        conn.close()
-
-# Bu endpoint sunucudaki scraper'ı tetikler
-@app.get("/guncelle")
-def verileri_guncelle(background_tasks: BackgroundTasks):
-    def gorev():
-        print("Veri güncelleme başladı...")
-        scraper.veritabani_kur()
-        # Temel ürünleri tara
-        liste = ["yumurta", "süt", "peynir", "yoğurt", "yağ", "makarna", "tavuk", "ekmek"]
-        for urun in liste:
-            scraper.veri_cek(urun)
-        print("Veri güncelleme tamamlandı.")
-
-    background_tasks.add_task(gorev)
-    return {"mesaj": "Veri güncelleme işlemi arka planda başlatıldı. 1-2 dakika sürebilir."}
+@app.get("/api/search")
+def search_products(
+    lat: float, 
+    lon: float, 
+    q: Optional[str] = None
+):
+    """
+    Frontend'den gelen konuma göre gerçek zamanlı ürün araması yapar.
+    Örnek: /api/search?lat=41.0082&lon=28.9784&q=yumurta
+    """
+    results = scraper.market_fiyatlari_getir(lat, lon, q)
+    return {
+        "location": {"lat": lat, "lon": lon},
+        "count": len(results),
+        "data": results
+    }
